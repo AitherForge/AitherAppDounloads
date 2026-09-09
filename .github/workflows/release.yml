@@ -1,0 +1,97 @@
+name: Build Aither Apps Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 1.0.1"
+        required: true
+        default: "1.0.0"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            artifact: windows
+          - platform: macOS
+            os: macos-latest
+            artifact: macos
+          - platform: Linux
+            os: ubuntu-latest
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout Aither Apps
+        uses: actions/checkout@v4
+        with:
+          repository: AitherForge/AitherApps
+          ref: main
+          path: AitherApps
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: AitherApps/desktop/package.json
+
+      - name: Install dependencies
+        working-directory: AitherApps/desktop
+        run: npm install
+
+      - name: Build desktop installer
+        working-directory: AitherApps/desktop
+        run: npm run dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aither-apps-${{ matrix.artifact }}
+          path: AitherApps/desktop/dist/**
+          if-no-files-found: error
+
+  release:
+    name: Publish Aither Apps release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: aither-apps-windows
+          path: release-assets/windows
+
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: aither-apps-macos
+          path: release-assets/macos
+
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: aither-apps-linux
+          path: release-assets/linux
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Aither Apps v${{ inputs.version }}
+          target_commitish: main
+          generate_release_notes: true
+          files: |
+            release-assets/windows/**
+            release-assets/macos/**
+            release-assets/linux/**
